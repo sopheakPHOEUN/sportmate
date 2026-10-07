@@ -299,3 +299,35 @@ def accept_waiting_list_entry(entry_id: UUID, user: dict = Depends(get_current_u
 
     db.commit()
     return {"status": "joined"}
+
+@router.get("", response_model=PaginatedMatches, summary="List matches")
+def list_matches(
+    sport: str | None = None,
+    date: str | None = None,
+    location: str | None = None,
+    created_by_me: bool = False,
+    joined_by_me: bool = False,
+    status: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Match)
+    if sport:
+        query = query.filter(Match.sport == sport)
+    if date:
+        query = query.filter(Match.date == date)
+    if location:
+        query = query.filter(Match.location.ilike(f"%{location}%"))
+    if status:
+        query = query.filter(Match.status == status)
+    if created_by_me:
+        query = query.filter(Match.created_by == user["sub"])
+    if joined_by_me:
+        joined_ids = [row.match_id for row in db.query(MatchPlayer).filter(MatchPlayer.user_id == user["sub"]).all()]
+        query = query.filter(Match.id.in_(joined_ids))
+
+    total = query.count()
+    items = query.offset((page - 1) * page_size).limit(page_size).all()
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
