@@ -331,3 +331,25 @@ def list_matches(
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+@router.get("/{match_id}/leave-risk-preview", summary="Preview the leave-risk tier without actually leaving")
+def leave_risk_preview(match_id: UUID, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    is_participant = db.query(MatchPlayer).filter(
+        MatchPlayer.match_id == match_id, MatchPlayer.user_id == user["sub"]
+    ).first()
+    if not is_participant:
+        raise HTTPException(status_code=400, detail="You are not part of this match")
+
+    hours_left = hours_remaining(match.date, match.time)
+    risk_level = classify_risk(hours_left)
+
+    return {
+        "risk_level": risk_level,
+        "hours_remaining": round(hours_left, 2),
+        "will_restrict": risk_level == RISK_CRITICAL,
+        "restriction_days": CRITICAL_RESTRICTION_DAYS if risk_level == RISK_CRITICAL else 0,
+    }
